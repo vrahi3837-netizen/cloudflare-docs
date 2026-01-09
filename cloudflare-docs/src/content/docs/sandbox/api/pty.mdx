@@ -1,0 +1,560 @@
+---
+title: PTY (Pseudo-Terminal)
+pcx_content_type: concept
+sidebar:
+  order: 8
+---
+
+import { Details, TypeScriptExample } from "~/components";
+
+Create and manage interactive terminal sessions with full PTY (pseudo-terminal) support. PTY sessions provide proper terminal emulation with features like color output, cursor control, and interactive prompts.
+
+## Methods
+
+### `create()`
+
+Create a new PTY session with configurable terminal dimensions, command, working directory, and environment variables.
+
+```ts
+const pty = await sandbox.pty.create(options?: PtyCreateOptions): Promise<PtyHandle>
+```
+
+**Parameters**:
+- `options` (optional):
+  - `cols` - Terminal width in columns (default: `80`, range: `1-1000`)
+  - `rows` - Terminal height in rows (default: `24`, range: `1-1000`)
+  - `command` - Command to execute (default: `['/bin/bash']`)
+  - `cwd` - Working directory (default: `/`)
+  - `env` - Environment variables (merged with defaults)
+
+**Returns**: `Promise<PtyHandle>` - Handle for interacting with the PTY session
+
+<TypeScriptExample>
+```
+// Create PTY with default bash shell
+const pty = await sandbox.pty.create({
+  cols: 80,
+  rows: 24
+});
+
+// Create PTY with custom command
+const pythonPty = await sandbox.pty.create({
+  cols: 100,
+  rows: 30,
+  command: ['/usr/bin/python3'],
+  cwd: '/workspace',
+  env: { PYTHONPATH: '/workspace/lib' }
+});
+```
+</TypeScriptExample>
+
+### `attach()`
+
+Attach a PTY to an existing session to inherit its working directory and environment variables.
+
+```ts
+const pty = await sandbox.pty.attach(sessionId: string, options?: PtyAttachOptions): Promise<PtyHandle>
+```
+
+**Parameters**:
+- `sessionId` - ID of existing session to attach to
+- `options` (optional):
+  - `cols` - Terminal width (default: `80`)
+  - `rows` - Terminal height (default: `24`)
+  - `command` - Command to execute (default: `['/bin/bash']`)
+
+**Returns**: `Promise<PtyHandle>` - Handle for the attached PTY session
+
+<TypeScriptExample>
+```
+// Create a session with specific working directory
+const session = await sandbox.sessions.create({
+  cwd: '/app',
+  env: { NODE_ENV: 'production' }
+});
+
+// Attach PTY to inherit session's cwd and env
+const pty = await sandbox.pty.attach(session.id, {
+  cols: 80,
+  rows: 24
+});
+```
+</TypeScriptExample>
+
+### `getById()`
+
+Reconnect to an existing PTY session by its ID.
+
+```ts
+const pty = await sandbox.pty.getById(id: string): Promise<PtyHandle>
+```
+
+**Parameters**:
+- `id` - PTY session identifier
+
+**Returns**: `Promise<PtyHandle>` - Handle for the existing PTY session
+
+<TypeScriptExample>
+```
+// Store PTY ID for later reconnection
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+const ptyId = pty.id;
+
+// Later, reconnect to the same PTY
+const reconnected = await sandbox.pty.getById(ptyId);
+
+// Resume interaction
+reconnected.write('ls -la\n');
+```
+</TypeScriptExample>
+
+### `list()`
+
+List all active PTY sessions in the sandbox.
+
+```ts
+const ptys = await sandbox.pty.list(): Promise<PtyInfo[]>
+```
+
+**Returns**: `Promise<PtyInfo[]>` - Array of PTY session metadata
+
+Each `PtyInfo` object contains:
+- `id` - PTY session identifier
+- `cols` - Terminal width
+- `rows` - Terminal height
+- `running` - Whether process is still active
+
+<TypeScriptExample>
+```
+const ptys = await sandbox.pty.list();
+
+for (const pty of ptys) {
+  console.log(`PTY ${pty.id}: ${pty.cols}x${pty.rows}, running: ${pty.running}`);
+}
+```
+</TypeScriptExample>
+
+### `getInfo()`
+
+Get metadata about a specific PTY session.
+
+```ts
+const info = await sandbox.pty.getInfo(id: string): Promise<PtyInfo>
+```
+
+**Parameters**:
+- `id` - PTY session identifier
+
+**Returns**: `Promise<PtyInfo>` - PTY session metadata
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+const info = await sandbox.pty.getInfo(pty.id);
+
+console.log(`Terminal size: ${info.cols}x${info.rows}`);
+console.log(`Status: ${info.running ? 'running' : 'stopped'}`);
+```
+</TypeScriptExample>
+
+### `resize()`
+
+Resize an existing PTY session's terminal dimensions.
+
+```ts
+await sandbox.pty.resize(id: string, cols: number, rows: number): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY session identifier
+- `cols` - New terminal width (range: `1-1000`)
+- `rows` - New terminal height (range: `1-1000`)
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Resize when browser window changes
+window.addEventListener('resize', () => {
+  const newCols = Math.floor(window.innerWidth / charWidth);
+  const newRows = Math.floor(window.innerHeight / charHeight);
+  await sandbox.pty.resize(pty.id, newCols, newRows);
+});
+```
+</TypeScriptExample>
+
+### `write()`
+
+Send input to a PTY session.
+
+```ts
+await sandbox.pty.write(id: string, data: string): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY session identifier
+- `data` - Input data to send (including control characters)
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Send commands
+await sandbox.pty.write(pty.id, 'ls -la\n');
+await sandbox.pty.write(pty.id, 'cd /app\n');
+
+// Send control characters (Ctrl+C = \x03)
+await sandbox.pty.write(pty.id, '\x03');
+```
+</TypeScriptExample>
+
+### `kill()`
+
+Terminate a PTY session with an optional signal.
+
+```ts
+await sandbox.pty.kill(id: string, signal?: string): Promise<void>
+```
+
+**Parameters**:
+- `id` - PTY session identifier
+- `signal` (optional) - Signal to send (e.g., `'SIGTERM'`, `'SIGKILL'`). Default: `'SIGTERM'`
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Graceful termination
+await sandbox.pty.kill(pty.id);
+
+// Force kill
+await sandbox.pty.kill(pty.id, 'SIGKILL');
+```
+</TypeScriptExample>
+
+## PTY Handle API
+
+The `PtyHandle` returned by `create()`, `attach()`, and `getById()` provides methods for interacting with the PTY session:
+
+### Properties
+
+- `id` - Unique PTY session identifier
+- `exited` - Promise that resolves with exit code when process terminates
+
+### `write()`
+
+Send input to the terminal.
+
+```ts
+pty.write(data: string): Promise<void>
+```
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Send interactive input
+await pty.write('python3\n');
+await pty.write('print("Hello, World!")\n');
+await pty.write('exit()\n');
+```
+</TypeScriptExample>
+
+### `resize()`
+
+Resize the terminal window.
+
+```ts
+pty.resize(cols: number, rows: number): Promise<void>
+```
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Dynamically adjust size
+await pty.resize(120, 40);
+```
+</TypeScriptExample>
+
+### `kill()`
+
+Terminate the PTY session.
+
+```ts
+pty.kill(signal?: string): Promise<void>
+```
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Clean shutdown
+await pty.kill();
+```
+</TypeScriptExample>
+
+### `onData()`
+
+Subscribe to terminal output events.
+
+```ts
+pty.onData(callback: (data: string) => void): void
+```
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Stream output to terminal emulator
+pty.onData((data) => {
+  terminalEmulator.write(data);
+});
+
+// Send commands
+await pty.write('ls -la\n');
+```
+</TypeScriptExample>
+
+### `onExit()`
+
+Handle process termination events.
+
+```ts
+pty.onExit(callback: (exitCode: number) => void): void
+```
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+pty.onExit((exitCode) => {
+  console.log(`Process exited with code ${exitCode}`);
+  if (exitCode !== 0) {
+    console.error('Command failed');
+  }
+});
+
+await pty.write('exit 0\n');
+```
+</TypeScriptExample>
+
+### Async Iteration
+
+PTY handles support async iteration for scripting use cases.
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Collect all output
+let output = '';
+const outputPromise = (async () => {
+  for await (const chunk of pty) {
+    output += chunk;
+  }
+})();
+
+// Send commands
+await pty.write('echo "test"\n');
+await pty.write('exit\n');
+
+// Wait for completion
+await outputPromise;
+console.log('Complete output:', output);
+```
+</TypeScriptExample>
+
+## Transport Options
+
+PTY sessions support both WebSocket (real-time) and HTTP (polling) transports. WebSocket is recommended for interactive terminals, while HTTP works when WebSocket connections are unavailable.
+
+### WebSocket Transport
+
+Enable WebSocket transport in sandbox options:
+
+<TypeScriptExample>
+```
+const sandbox = new Sandbox({
+  // ... other options
+  useWebSocket: true
+});
+
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// PTY output streams in real-time via WebSocket
+pty.onData((data) => terminal.write(data));
+```
+</TypeScriptExample>
+
+### HTTP Transport
+
+HTTP transport uses polling for PTY output:
+
+<TypeScriptExample>
+```
+// Default transport (no WebSocket option needed)
+const sandbox = new Sandbox({
+  // ... other options
+});
+
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// PTY output delivered via HTTP polling
+pty.onData((data) => terminal.write(data));
+```
+</TypeScriptExample>
+
+## Use Cases
+
+### Interactive Terminal UI
+
+Build terminal interfaces with libraries like xterm.js:
+
+<TypeScriptExample>
+```
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+
+// Create terminal emulator
+const term = new Terminal();
+const fitAddon = new FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById('terminal'));
+fitAddon.fit();
+
+// Create PTY
+const pty = await sandbox.pty.create({
+  cols: term.cols,
+  rows: term.rows
+});
+
+// Pipe PTY output to terminal
+pty.onData((data) => term.write(data));
+
+// Pipe terminal input to PTY
+term.onData((data) => pty.write(data));
+
+// Handle terminal resize
+term.onResize(({ cols, rows }) => {
+  pty.resize(cols, rows);
+});
+
+// Handle exit
+pty.onExit((code) => {
+  term.writeln(`\r\n[Process exited with code ${code}]`);
+});
+```
+</TypeScriptExample>
+
+### Command Automation
+
+Script terminal interactions:
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// Wait for specific output patterns
+function waitForPrompt(pty: PtyHandle): Promise<void> {
+  return new Promise((resolve) => {
+    let buffer = '';
+    const handler = (data: string) => {
+      buffer += data;
+      if (buffer.includes('$ ')) {
+        pty.onData(() => {}); // Remove handler
+        resolve();
+      }
+    };
+    pty.onData(handler);
+  });
+}
+
+// Run sequence of commands
+await pty.write('cd /app\n');
+await waitForPrompt(pty);
+
+await pty.write('npm install\n');
+await waitForPrompt(pty);
+
+await pty.write('npm test\n');
+await waitForPrompt(pty);
+
+await pty.kill();
+```
+</TypeScriptExample>
+
+### Multi-User Collaboration
+
+Share terminal sessions between multiple users:
+
+<TypeScriptExample>
+```
+// User 1: Create PTY
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+const ptyId = pty.id;
+
+// Share ptyId with other users...
+
+// User 2: Reconnect to same PTY
+const sharedPty = await sandbox.pty.getById(ptyId);
+
+// Both users see the same output
+sharedPty.onData((data) => terminal.write(data));
+
+// Both users can send input
+await sharedPty.write('ls -la\n');
+```
+</TypeScriptExample>
+
+## Exit Codes
+
+PTY sessions return structured exit codes:
+
+- `0` - Successful completion
+- `1-255` - Command-specific error codes
+- Signal-based codes for terminated processes:
+  - SIGINT (Ctrl+C): `130`
+  - SIGTERM: `143`
+  - SIGKILL: `137`
+
+<TypeScriptExample>
+```
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+pty.onExit((exitCode) => {
+  if (exitCode === 0) {
+    console.log('Success');
+  } else if (exitCode === 130) {
+    console.log('Interrupted by user (Ctrl+C)');
+  } else if (exitCode === 143) {
+    console.log('Terminated (SIGTERM)');
+  } else {
+    console.error(`Failed with exit code ${exitCode}`);
+  }
+});
+
+await pty.write('exit 0\n');
+```
+</TypeScriptExample>
+
+## Session Cleanup
+
+PTY sessions support configurable disconnect timeout for graceful cleanup of orphaned sessions:
+
+<TypeScriptExample>
+```
+// PTY automatically cleans up after disconnect timeout
+const pty = await sandbox.pty.create({ cols: 80, rows: 24 });
+
+// If client disconnects, PTY terminates after timeout period
+// Reconnect before timeout to resume session
+const reconnected = await sandbox.pty.getById(pty.id);
+```
+</TypeScriptExample>
+
+## Related Resources
+
+- [Commands](/sandbox/api/commands/) - Execute non-interactive commands
+- [Sessions](/sandbox/api/sessions/) - Manage execution contexts
+- [Ports](/sandbox/api/ports/) - Expose services via preview URLs
